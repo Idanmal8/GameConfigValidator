@@ -17,7 +17,7 @@ The repo is laid out as a **monorepo** (`services/*`) so it reads as one service
 
 - [Architecture](#architecture)
 - [Quick start — Docker (zero config)](#quick-start--docker-zero-config)
-- [Building & publishing the image](#building--publishing-the-image)
+- [Building the image](#building-the-image)
 - [Local development](#local-development)
 - [API](#api)
 - [Example requests & responses](#example-requests--responses)
@@ -87,14 +87,12 @@ docker run -p 3000:3000 -e LLM_PROVIDER=mock game-config-validator
 
 ---
 
-## Building & publishing the image
+## Building the image
 
-The image is **keyless** — no secret is baked in (providers are configured at runtime). Publishing to GHCR is automated by the **[`Publish image to GHCR`](.github/workflows/publish.yml)** workflow (multi-arch amd64 + arm64), so teammates can `docker pull` a ready image; the Ollama sibling still supplies the keyless local model.
+The image is **keyless** — no secret is baked in (providers are configured at runtime). `docker compose up` builds it locally alongside the Ollama sibling, so there's nothing to publish. To build a standalone image directly:
 
 ```bash
-# manual equivalent
-docker build -t ghcr.io/idanmal8/game-config-validator:latest .
-docker push ghcr.io/idanmal8/game-config-validator:latest
+docker build -t game-config-validator .
 ```
 
 > **Secret posture.** Nothing sensitive is in the repo or the image. Each user supplies their **own** cloud key at runtime (via `.env` / shell), or uses the keyless Ollama default. Passing a key as a runtime env var is the 12-factor standard; it isn't cryptographic protection (env is readable via `docker inspect`), but combined with "never in git, never in the image" it's the honest, professional baseline. For central rotation/audit, the drop-in upgrade is a secret manager (e.g. Google Secret Manager) fetched at boot.
@@ -256,7 +254,11 @@ curl -s -X POST http://localhost:3000/validate \
 
 ## Web UI
 
-A minimal demo UI is served at the site root (<http://localhost:3000/>): paste a config, optionally pick a model, click **Validate**, and see schema results + LLM feedback. Includes one-click example buttons.
+A demo UI is served at the site root (<http://localhost:3000/>): paste a config, optionally pick a provider/model, click **Validate**, and see schema results + LLM feedback. Includes one-click examples and a live JSON-issue highlighter.
+
+**Editor shortcuts:** `Tab` / `Shift+Tab` indent/dedent · `Alt`/`Ctrl` + `↑`/`↓` move the current line · `⌘`/`Ctrl` + `S` (or the **Format** button) prettifies the JSON (tolerating a trailing comma).
+
+The client is organised as small ES modules under `public/js/` — `api.js` (server access), `view.js` (rendering), `editor.js` + `highlighter.js` (editor behaviors), and `controller.js` (wiring) — a lightweight view / data / controller split with no build step.
 
 ---
 
