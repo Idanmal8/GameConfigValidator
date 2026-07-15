@@ -20,6 +20,17 @@ describe('ModelFactory', () => {
     expect(built.model).toBeDefined();
   });
 
+  it('carries a request timeout (falls back to the default when unset)', () => {
+    const factory = factoryWith({ 'llm.ollama.baseUrl': 'http://localhost:11434' });
+    expect(factory.create('ollama').timeoutMs).toBe(60_000);
+
+    const withOverride = factoryWith({
+      'llm.ollama.baseUrl': 'http://localhost:11434',
+      'llm.timeoutMs': 15_000,
+    });
+    expect(withOverride.create('ollama').timeoutMs).toBe(15_000);
+  });
+
   it('throws a clear error when a cloud provider has no key', () => {
     const factory = factoryWith({ 'llm.gemini.apiKey': '' });
     expect(() => factory.create('gemini')).toThrow(/GEMINI_API_KEY/);
