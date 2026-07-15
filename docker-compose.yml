@@ -1,20 +1,15 @@
 services:
   config-validator:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      # The key is baked at BUILD time from the builder's shell / CI secret.
-      # Build with the key set in your environment, e.g.:
-      #   GEMINI_API_KEY=your-key docker compose build
-      args:
-        GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-        GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.1-flash-lite}
-        LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
-    image: game-config-validator
+    # Pre-built image published to GHCR by the "Publish image to GHCR" workflow,
+    # with the Gemini key already baked in. `docker compose up` pulls and runs it
+    # — no build, no key, no .env needed on this machine.
+    #
+    # One-time on each machine (private image needs auth):
+    #   echo $GITHUB_TOKEN | docker login ghcr.io -u <your-github-username> --password-stdin
+    image: ghcr.io/idanmal8/game-config-validator:latest
+    pull_policy: always
     ports:
       - "3000:3000"
-    # No runtime secrets here — the key lives in the (private) image.
-    # Override only non-secret runtime settings if needed:
     environment:
       PORT: 3000
     restart: unless-stopped

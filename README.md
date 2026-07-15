@@ -58,59 +58,56 @@ GameConfigValidator/
 
 ## Quick start — Docker (zero config)
 
-**If you just want to use the service, you don't need an API key or any configuration.** The Gemini key is already **baked into the published image**, so you only pull and run:
+**If you just want to use the service, you don't need an API key, Node.js, or any configuration.** The Gemini key is already baked into the image published to GitHub Container Registry (GHCR). Because the image is private (it contains the key), authenticate once, then run:
 
 ```bash
-docker run -p 3000:3000 <your-private-registry>/game-config-validator:latest
-```
+# 1. one-time login on this machine (any GitHub token with read:packages scope)
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u <your-github-username> --password-stdin
 
-That's it — open <http://localhost:3000>. The UI, Swagger (`/api`), and `POST /validate` all work immediately; the key is inside the image.
-
-Prefer compose? With the image published, a one-liner does it:
-
-```bash
+# 2. from the repo directory, pull + run
 docker compose up
 ```
 
-> **Requirements to run:** just Docker. No Node.js, no key, no `.env`.
+That's it — open <http://localhost:3000>. The UI, Swagger (`/api`), and `POST /validate` work immediately; `docker compose up` **pulls** the pre-built image (it never builds from your clone), so the key stays server-side and out of your hands.
 
-Want to run fully offline (no LLM calls at all) for a quick smoke test? Use the deterministic mock provider:
+No repo checkout? A single `docker run` works too:
 
 ```bash
-docker run -p 3000:3000 -e LLM_PROVIDER=mock <your-private-registry>/game-config-validator:latest
+docker run -p 3000:3000 ghcr.io/idanmal8/game-config-validator:latest
+```
+
+> **Requirements to run:** just Docker + a one-time `docker login ghcr.io`. No Node.js, no key, no `.env`.
+
+Run fully offline (no LLM calls) for a quick smoke test with the deterministic mock provider:
+
+```bash
+docker run -p 3000:3000 -e LLM_PROVIDER=mock ghcr.io/idanmal8/game-config-validator:latest
 ```
 
 ---
 
 ## Building & publishing the image
 
-*(This section is for the maintainer who holds the key — end users never do this.)*
+*(For the maintainer only — end users never do this.)*
 
-The key is supplied **at build time** from the builder's shell / CI secret (a `--build-arg`). It is never read from the repo and never committed.
+Publishing is automated by the **[`Publish image to GHCR`](.github/workflows/publish.yml)** GitHub Actions workflow. It builds the image with the key baked in and pushes it to `ghcr.io/idanmal8/game-config-validator`.
+
+**One-time setup:**
+
+1. Add the key as a repo secret: **Settings → Secrets and variables → Actions → New repository secret**, name `GEMINI_API_KEY`, value = your Google AI Studio key. GitHub masks it in all logs.
+2. (Optional) Override the baked model via the `GEMINI_MODEL` build-arg in the workflow.
+
+**Publishing:** the workflow runs automatically on every push to `main` that touches the service/Dockerfile, or on demand via **Actions → Publish image to GHCR → Run workflow**. It authenticates to GHCR with the built-in `GITHUB_TOKEN` (no PAT needed for pushing from CI).
+
+Prefer to publish by hand instead? The equivalent local commands:
 
 ```bash
-# 1. build with the key baked in (key comes from your shell/CI secret)
 export GEMINI_API_KEY=your-google-ai-studio-key
-docker build --build-arg GEMINI_API_KEY="$GEMINI_API_KEY" -t game-config-validator .
-#    optionally override the baked model:  --build-arg GEMINI_MODEL=gemini-3.5-flash
-
-# 2. push to a PRIVATE registry, so teammates can pull + run with zero config
-docker tag game-config-validator <your-private-registry>/game-config-validator:latest
-docker push <your-private-registry>/game-config-validator:latest
+docker build --build-arg GEMINI_API_KEY="$GEMINI_API_KEY" -t ghcr.io/idanmal8/game-config-validator:latest .
+docker push ghcr.io/idanmal8/game-config-validator:latest
 ```
 
-**No private registry?** Share the built image as a file instead — same zero-config result:
-
-```bash
-# maintainer: export the image
-docker save game-config-validator | gzip > game-config-validator.tar.gz
-
-# teammate: load it, then run (no key, no config)
-docker load < game-config-validator.tar.gz
-docker run -p 3000:3000 game-config-validator
-```
-
-> **⚠️ Security policy.** Because the key is embedded in the image, it is recoverable from the image layers (`docker inspect`). **This image must live only in a private, access-controlled registry — never push it to a public one.** The repo itself contains no secret: only `.env.example` (a placeholder) is committed, and `.env` files are gitignored.
+> **⚠️ Security policy.** Because the key is embedded in the image, it is recoverable from the image layers (`docker inspect`). **Keep this package private in GHCR — never make it public.** The repo itself contains no secret: only `.env.example` (a placeholder) is committed, and `.env` files are gitignored.
 >
 > If keeping the key out of the image ever becomes a requirement, the drop-in upgrade is **Google Secret Manager** (store the key once, fetch it at boot via GCP credentials, commit only the non-secret resource name). The provider abstraction makes this an additive change with no consumer-facing difference.
 
