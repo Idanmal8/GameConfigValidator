@@ -50,6 +50,30 @@ test('trailing comma + missing field yields a readable "is required" error', asy
   expect(body.llm_feedback).toBeNull();
 });
 
+test('GET /providers reports live availability per provider', async ({
+  request,
+}) => {
+  const res = await request.get('/providers');
+  expect(res.ok()).toBeTruthy();
+
+  const body = await res.json();
+  expect(body.default).toBeTruthy();
+  const byName = Object.fromEntries(
+    body.providers.map((p: { name: string }) => [p.name, p]),
+  );
+
+  // keyless providers are always available
+  expect(byName.ollama.available).toBe(true);
+  expect(byName.ollama.requiresKey).toBe(false);
+  expect(byName.mock.available).toBe(true);
+
+  // cloud providers reflect whether a key is loaded (see playwright env)
+  expect(byName.gemini.requiresKey).toBe(true);
+  expect(byName.gemini.available).toBe(true); // GEMINI_API_KEY set
+  expect(byName.openai.available).toBe(false); // no OPENAI_API_KEY
+  expect(Array.isArray(byName.gemini.models)).toBe(true);
+});
+
 test('genuinely broken JSON returns a friendly, located message', async ({
   request,
 }) => {

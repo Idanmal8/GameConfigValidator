@@ -142,21 +142,6 @@
               <label for="model">Model (provider · model)</label>
               <select id="model">
                 <option value="">server default</option>
-                <optgroup label="Ollama (local, no key)">
-                  <option value="ollama|llama3.2">llama3.2</option>
-                  <option value="ollama|mistral">mistral</option>
-                </optgroup>
-                <optgroup label="Google Gemini (needs key)">
-                  <option value="gemini|gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
-                  <option value="gemini|gemini-3.5-flash">gemini-3.5-flash</option>
-                </optgroup>
-                <optgroup label="OpenAI (needs key)">
-                  <option value="openai|gpt-4o-mini">gpt-4o-mini</option>
-                  <option value="openai|gpt-4o">gpt-4o</option>
-                </optgroup>
-                <optgroup label="Offline">
-                  <option value="mock|mock">mock (deterministic)</option>
-                </optgroup>
               </select>
             </div>
             <button id="submit">Validate</button>
@@ -174,6 +159,41 @@
 
     <script>
       const $ = (id) => document.getElementById(id);
+
+      // Build the model dropdown from the server so labels reflect which
+      // providers actually have a key loaded (enabled vs needs key).
+      async function loadProviders() {
+        const sel = $('model');
+        let data;
+        try {
+          data = await (await fetch('/providers')).json();
+        } catch {
+          return; // leave the "server default" option only
+        }
+        sel.length = 1; // keep the first "server default" option
+        sel.options[0].textContent = 'server default (' + data.default + ')';
+        const nice = { ollama: 'Ollama', gemini: 'Google Gemini', openai: 'OpenAI', mock: 'Mock' };
+        for (const p of data.providers) {
+          const status = !p.requiresKey
+            ? (p.name === 'mock' ? 'offline' : 'local · no key')
+            : p.available
+            ? 'enabled ✓'
+            : 'needs key';
+          const og = document.createElement('optgroup');
+          og.label = (nice[p.name] || p.name) + ' — ' + status;
+          const blocked = p.requiresKey && !p.available;
+          og.disabled = blocked;
+          for (const m of p.models) {
+            const o = document.createElement('option');
+            o.value = p.name + '|' + m;
+            o.textContent = m;
+            o.disabled = blocked;
+            og.appendChild(o);
+          }
+          sel.appendChild(og);
+        }
+      }
+      loadProviders();
 
       document.querySelectorAll('.examples button').forEach((b) => {
         b.addEventListener('click', () => {

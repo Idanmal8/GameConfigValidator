@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import {
   ApiBody,
   ApiOkResponse,
@@ -7,13 +7,27 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ValidationService } from './validation.service';
+import { LlmService } from '../llm/llm.service';
 import { LevelConfigDto } from './dto/level-config.dto';
 import { ValidationResponseDto } from './dto/validation-response.dto';
 
 @ApiTags('validation')
 @Controller()
 export class ValidationController {
-  constructor(private readonly validationService: ValidationService) {}
+  constructor(
+    private readonly validationService: ValidationService,
+    private readonly llm: LlmService,
+  ) {}
+
+  @Get('providers')
+  @ApiOperation({
+    summary: 'List LLM providers with live availability',
+    description:
+      'Reports which providers are configured (key loaded) so the UI can show enabled / needs-key.',
+  })
+  providers() {
+    return this.llm.listProviders();
+  }
 
   @Post('validate')
   @ApiOperation({

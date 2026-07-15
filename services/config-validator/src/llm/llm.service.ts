@@ -27,8 +27,49 @@ export class LlmService {
     private readonly mock: MockProvider,
   ) {}
 
+  // Static catalog of selectable models per provider. `requiresKey` drives the
+  // "enabled" vs "needs key" state the UI shows.
+  private static readonly CATALOG: Record<
+    LlmProviderName,
+    { requiresKey: boolean; models: string[] }
+  > = {
+    ollama: { requiresKey: false, models: ['llama3.2'] },
+    gemini: { requiresKey: true, models: ['gemini-3.1-flash-lite', 'gemini-3.5-flash'] },
+    openai: { requiresKey: true, models: ['gpt-4o-mini', 'gpt-4o'] },
+    mock: { requiresKey: false, models: ['mock'] },
+  };
+
   get defaultProvider(): LlmProviderName {
     return (this.config.get<string>('llm.provider') as LlmProviderName) || 'ollama';
+  }
+
+  /** Whether a provider is usable right now (key present for cloud providers). */
+  isAvailable(provider: LlmProviderName): boolean {
+    if (provider === 'gemini') return !!this.config.get<string>('llm.gemini.apiKey');
+    if (provider === 'openai') return !!this.config.get<string>('llm.openai.apiKey');
+    return true; // ollama + mock need no key
+  }
+
+  /** Provider catalog with live availability, for the UI / API discovery. */
+  listProviders(): {
+    default: LlmProviderName;
+    providers: {
+      name: LlmProviderName;
+      requiresKey: boolean;
+      available: boolean;
+      models: string[];
+    }[];
+  } {
+    const names = Object.keys(LlmService.CATALOG) as LlmProviderName[];
+    return {
+      default: this.defaultProvider,
+      providers: names.map((name) => ({
+        name,
+        requiresKey: LlmService.CATALOG[name].requiresKey,
+        available: this.isAvailable(name),
+        models: LlmService.CATALOG[name].models,
+      })),
+    };
   }
 
   async analyze(
