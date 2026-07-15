@@ -31,30 +31,48 @@ The repo is laid out as a **monorepo** (`services/*`) so it reads as one service
 
 ## Quick start
 
-**No API key, no `.env`, no Node.js needed.** From the repo directory:
+From the repo directory:
 
 ```bash
 docker compose up
 ```
 
-On a fresh clone this **builds the image automatically** (the service has a `build:` step), then starts two services: a local **Ollama** container (the keyless default LLM) and the validator. Open <http://localhost:3000> — the UI, Swagger (`/api`), and `POST /validate` all work.
+That's it — this builds the image and runs the whole stack. **It needs no API key because it runs a local [Ollama](https://ollama.com) model by default** — not because Docker fills in any keys for you (there simply isn't a key to provide for a local model). Open <http://localhost:3000> — the UI, Swagger (`/api`), and `POST /validate` all work.
 
-> Use `docker compose up --build` only when you've **changed the source** and want the image rebuilt — a plain `up` reuses the existing image.
+> On a fresh clone `docker compose up` builds the image automatically; add `--build` only after you change the source. **First run** pulls the Ollama model (`llama3.2`, ~2 GB) into a Docker volume — a few minutes and a few GB of RAM. Requests may say _"model still starting"_ until the pull finishes; then it's cached and later runs are instant.
 
-> **First run** pulls the Ollama model (`llama3.2`, ~2 GB) into a Docker volume — that takes a few minutes and needs a few GB of RAM. Requests may return _"model still starting"_ until the pull finishes; after that it's cached. Subsequent `docker compose up` runs are instant.
-
-Want a real cloud model instead of local? Provide **your own** key (nothing is shipped) and select the provider:
-
-```bash
-GEMINI_API_KEY=your-key docker compose up      # enables the gemini provider
-# then: POST /validate?provider=gemini
-```
-
-No LLM at all (instant, deterministic) for a smoke test:
+Instant, no-LLM smoke test (deterministic mock):
 
 ```bash
 docker run -p 3000:3000 -e LLM_PROVIDER=mock game-config-validator
 ```
+
+### Using a cloud model instead (optional) — where the `.env` goes
+
+Want **Gemini** or **OpenAI** rather than the local model? You provide **your own** key (none is shipped in the repo or image). The key goes in a **`.env` file in the repo root — the same folder as `docker-compose.yml`** — which `docker compose` reads automatically.
+
+```bash
+# 1. in the repo root (next to docker-compose.yml)
+cp .env.example .env
+
+# 2. edit .env — set the provider you want and its key, e.g.:
+#      LLM_PROVIDER=gemini
+#      GEMINI_API_KEY=your-google-ai-studio-key
+#    (or LLM_PROVIDER=openai + OPENAI_API_KEY=...)
+
+# 3. run
+docker compose up
+```
+
+> **⚠️ Which `.env`, and where?** There are two, for two different ways of running:
+> | How you run it | `.env` location |
+> | --- | --- |
+> | **Docker** (`docker compose up`) | **`./.env`** — repo root, next to `docker-compose.yml` |
+> | **Local Node** (`npm run start:dev`, see [Local development](#local-development)) | `services/config-validator/.env` |
+>
+> Use the one that matches how you're running the app. The `.env` is gitignored, so your key is never committed.
+
+You can also keep the default (local Ollama) and just pick a cloud provider **per request** — `POST /validate?provider=gemini`, or the model dropdown in the UI (it shows which providers have a key loaded). That still requires the key to be set in the root `.env` above.
 
 ---
 
