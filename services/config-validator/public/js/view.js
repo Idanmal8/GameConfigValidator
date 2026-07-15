@@ -84,6 +84,32 @@ export function renderMessage(out, kind, title, body) {
     (body ? '<pre>' + escapeHtml(body) + '</pre>' : '');
 }
 
-export function renderBusy(out, text) {
-  out.innerHTML = '<span class="muted">' + escapeHtml(text) + '</span>';
+/**
+ * Show an animated "analyzing" state with a live elapsed timer and, after a few
+ * seconds, a reassurance note (local models can be slow). Returns a handle whose
+ * .stop() clears the timer — call it once the response arrives.
+ */
+export function startBusy(out) {
+  const started = Date.now();
+  out.innerHTML =
+    '<div class="loading">' +
+    '<span class="spinner" aria-hidden="true"></span>' +
+    '<span>Analyzing… <span class="loading-elapsed muted" id="busy-elapsed"></span></span>' +
+    '</div>' +
+    '<p class="muted loading-note" id="busy-note" hidden>' +
+    'Local models (Ollama) can take a little longer, especially on the first run — still working…' +
+    '</p>';
+
+  const elapsedEl = out.querySelector('#busy-elapsed');
+  const noteEl = out.querySelector('#busy-note');
+
+  const tick = () => {
+    const secs = Math.floor((Date.now() - started) / 1000);
+    if (elapsedEl) elapsedEl.textContent = secs > 0 ? secs + 's' : '';
+    if (noteEl && secs >= 4) noteEl.hidden = false;
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+
+  return { stop: () => clearInterval(timer) };
 }
