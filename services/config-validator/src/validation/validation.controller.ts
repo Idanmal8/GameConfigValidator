@@ -22,16 +22,22 @@ export class ValidationController {
       'Runs JSON Schema validation (ajv) and, when valid, LLM game-design analysis.',
   })
   @ApiQuery({
+    name: 'provider',
+    required: false,
+    description: 'Optional provider override: ollama (default) / gemini / openai / mock.',
+  })
+  @ApiQuery({
     name: 'model',
     required: false,
-    description: 'Optional model override, e.g. gemini-3.5-flash / gemini-3.1-flash-lite.',
+    description: 'Optional model override, e.g. llama3.2 / gemini-3.1-flash-lite / gpt-4o-mini.',
   })
   @ApiBody({ type: LevelConfigDto })
   @ApiOkResponse({ type: ValidationResponseDto })
   validate(
     @Body() body: string,
+    @Query('provider') provider?: string,
     @Query('model') model?: string,
   ): Promise<ValidationResponseDto> {
-    return this.validationService.validate(body, model);
+    return this.validationService.validate(body, { provider, model });
   }
 }

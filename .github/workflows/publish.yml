@@ -39,21 +39,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fail early if the key secret is missing
-        run: |
-          if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
-            echo "::error::Repo secret GEMINI_API_KEY is not set. Add it under Settings → Secrets and variables → Actions."
-            exit 1
-          fi
-
-      - name: Build and push
+      - name: Build and push (keyless — no secrets baked)
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          build-args: |
-            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}

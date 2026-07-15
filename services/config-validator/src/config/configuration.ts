@@ -1,25 +1,30 @@
 export interface AppConfig {
   port: number;
   llm: {
-    provider: 'gemini' | 'mock';
-    gemini: {
-      apiKey: string;
-      model: string;
-      baseUrl: string;
-    };
+    provider: string;
+    gemini: { apiKey: string; model: string };
+    openai: { apiKey: string; model: string };
+    ollama: { baseUrl: string; model: string };
   };
 }
 
 export default (): AppConfig => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
   llm: {
-    provider: (process.env.LLM_PROVIDER as 'gemini' | 'mock') ?? 'gemini',
+    // Default to the local, keyless Ollama provider so the service runs with
+    // zero secrets. Cloud providers activate only when their key is set.
+    provider: process.env.LLM_PROVIDER ?? 'ollama',
     gemini: {
       apiKey: process.env.GEMINI_API_KEY ?? '',
       model: process.env.GEMINI_MODEL ?? 'gemini-3.1-flash-lite',
-      baseUrl:
-        process.env.GEMINI_BASE_URL ??
-        'https://generativelanguage.googleapis.com/v1beta',
+    },
+    openai: {
+      apiKey: process.env.OPENAI_API_KEY ?? '',
+      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+    },
+    ollama: {
+      baseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
+      model: process.env.OLLAMA_MODEL ?? 'llama3.2',
     },
   },
 });

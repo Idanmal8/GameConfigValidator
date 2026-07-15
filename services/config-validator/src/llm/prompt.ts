@@ -1,4 +1,4 @@
-import { LlmFeedback } from './llm.provider.interface';
+import { LlmFeedback } from './llm.types';
 
 /**
  * System prompt. Encodes the domain and the *reference* balancing ranges as
@@ -41,8 +41,15 @@ export function buildUserPrompt(config: unknown): string {
  * object and coerce/clamp fields rather than trusting the payload blindly.
  */
 export function parseFeedback(text: string): LlmFeedback {
-  const json = extractJson(text);
+  return coerceFeedback(extractJson(text));
+}
 
+/**
+ * Normalises an already-parsed object (from structured output or JSON) into a
+ * safe `LlmFeedback`: trims text, filters non-string actions, clamps confidence
+ * to [0,1]. Shared by the structured-output and text-fallback paths.
+ */
+export function coerceFeedback(json: Record<string, unknown>): LlmFeedback {
   const analysis =
     typeof json.analysis === 'string' && json.analysis.trim()
       ? json.analysis.trim()
@@ -55,14 +62,12 @@ export function parseFeedback(text: string): LlmFeedback {
         .filter(Boolean)
     : [];
 
-  const confidence = clampConfidence(json.confidence);
-
   return {
     analysis,
     suggested_actions: suggested_actions.length
       ? suggested_actions
       : ['No specific actions provided.'],
-    confidence,
+    confidence: clampConfidence(json.confidence),
   };
 }
 

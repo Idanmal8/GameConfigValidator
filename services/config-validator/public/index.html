@@ -139,11 +139,24 @@
           </div>
           <div class="row">
             <div>
-              <label for="model">Model (optional override)</label>
+              <label for="model">Model (provider · model)</label>
               <select id="model">
-                <option value="">default (gemini-3.1-flash-lite)</option>
-                <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
-                <option value="gemini-3.5-flash">gemini-3.5-flash (smarter, may be busy)</option>
+                <option value="">server default</option>
+                <optgroup label="Ollama (local, no key)">
+                  <option value="ollama|llama3.2">llama3.2</option>
+                  <option value="ollama|mistral">mistral</option>
+                </optgroup>
+                <optgroup label="Google Gemini (needs key)">
+                  <option value="gemini|gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
+                  <option value="gemini|gemini-3.5-flash">gemini-3.5-flash</option>
+                </optgroup>
+                <optgroup label="OpenAI (needs key)">
+                  <option value="openai|gpt-4o-mini">gpt-4o-mini</option>
+                  <option value="openai|gpt-4o">gpt-4o</option>
+                </optgroup>
+                <optgroup label="Offline">
+                  <option value="mock|mock">mock (deterministic)</option>
+                </optgroup>
               </select>
             </div>
             <button id="submit">Validate</button>
@@ -256,8 +269,13 @@
         btn.textContent = 'Validating…';
         out.innerHTML = '<span class="muted">Analyzing…</span>';
         try {
-          const model = $('model').value;
-          const url = '/validate' + (model ? '?model=' + encodeURIComponent(model) : '');
+          // Value is "provider|model"; empty means use the server default.
+          const [provider, model] = ($('model').value || '').split('|');
+          const params = new URLSearchParams();
+          if (provider) params.set('provider', provider);
+          if (model) params.set('model', model);
+          const qs = params.toString();
+          const url = '/validate' + (qs ? '?' + qs : '');
           // Send the text as-is; the server parses + validates so JSON syntax
           // errors come back as readable, field-level messages.
           const res = await fetch(url, {
@@ -298,7 +316,7 @@
         } else {
           html += '<p class="muted" style="margin-top:12px">LLM analysis skipped (fix schema errors first).</p>';
         }
-        html += '<p class="muted" style="margin-top:12px;font-size:12px">provider: ' + (data.provider || '—') + '</p>';
+        html += '<p class="muted" style="margin-top:12px;font-size:12px">provider: ' + (data.provider || '—') + (data.model ? ' · model: ' + data.model : '') + '</p>';
         out.innerHTML = html;
       }
     </script>
