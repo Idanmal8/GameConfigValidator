@@ -7,7 +7,7 @@ A NestJS microservice that validates **game level configurations** in two layers
 
 It returns a single structured JSON response combining both.
 
-> **This branch (`improvment/LangChain`)** reimplements the LLM layer on **[LangChain](https://js.langchain.com/)** with **multiple selectable providers** — **Ollama** (local, no key, the default), **Google Gemini**, and **OpenAI** — plus a deterministic `mock`. Feedback is produced via LangChain **structured output** (Zod-validated). No API keys are baked into anything: the local Ollama default means `docker compose up` works with **zero secrets**, and cloud providers activate only when you supply your own key.
+> The LLM layer is built on **[LangChain](https://js.langchain.com/)** with **multiple selectable providers** — **Ollama** (local, no key, the default), **Google Gemini**, and **OpenAI** — plus a deterministic `mock`. Feedback is produced via LangChain **structured output** (Zod-validated). No API keys are baked into anything: the local Ollama default means `docker compose up` works with **zero secrets**, and cloud providers activate only when you supply your own key.
 
 The repo is laid out as a **monorepo** (`services/*`) so it reads as one service in a larger platform — adding a sibling service later needs no restructuring.
 
@@ -15,8 +15,8 @@ The repo is laid out as a **monorepo** (`services/*`) so it reads as one service
 
 ## Table of contents
 
+- [Quick start](#quick-start)
 - [Architecture](#architecture)
-- [Quick start — Docker (zero config)](#quick-start--docker-zero-config)
 - [Building the image](#building-the-image)
 - [Local development](#local-development)
 - [API](#api)
@@ -29,38 +29,7 @@ The repo is laid out as a **monorepo** (`services/*`) so it reads as one service
 
 ---
 
-## Architecture
-
-```
-GameConfigValidator/
-├── services/
-│   └── config-validator/            # the NestJS app
-│       ├── src/
-│       │   ├── main.ts              # bootstrap: Swagger + static UI
-│       │   ├── config/             # env loading + fail-fast validation
-│       │   ├── validation/
-│       │   │   ├── validation.controller.ts   # POST /validate
-│       │   │   ├── validation.service.ts       # orchestrates schema + LLM
-│       │   │   ├── schema/                      # ajv schema + service
-│       │   │   └── dto/                         # Swagger DTOs
-│       │   └── llm/
-│       │       ├── llm.service.ts               # LangChain facade (structured output)
-│       │       ├── model.factory.ts             # builds a ChatModel per provider
-│       │       ├── feedback.schema.ts           # Zod schema for structured output
-│       │       ├── providers/mock.provider.ts   # deterministic offline provider
-│       │       └── prompt.ts                     # system prompt + JSON fallback parse
-│       ├── public/index.html        # minimal demo UI
-│       └── test/e2e/                # Playwright API + UI tests
-├── Dockerfile                       # multi-stage, Node 20 (keyless)
-├── docker-compose.yml               # config-validator + Ollama (local LLM)
-└── package.json                     # npm workspace root
-```
-
-**Request flow:** `POST /validate` → ajv validates the body → if valid, the config is sent to the LLM provider → a combined `{ schema_validation, llm_feedback, provider }` response is returned. If the schema is invalid, the LLM call is skipped (analysing a malformed config is meaningless) and `llm_feedback` is `null`.
-
----
-
-## Quick start — Docker (zero config, zero keys)
+## Quick start
 
 **No API key, no `.env`, no Node.js needed.** From the repo directory:
 
@@ -68,7 +37,9 @@ GameConfigValidator/
 docker compose up
 ```
 
-This starts two services: a local **Ollama** container (the keyless default LLM) and the validator. Then open <http://localhost:3000> — the UI, Swagger (`/api`), and `POST /validate` all work.
+On a fresh clone this **builds the image automatically** (the service has a `build:` step), then starts two services: a local **Ollama** container (the keyless default LLM) and the validator. Open <http://localhost:3000> — the UI, Swagger (`/api`), and `POST /validate` all work.
+
+> Use `docker compose up --build` only when you've **changed the source** and want the image rebuilt — a plain `up` reuses the existing image.
 
 > **First run** pulls the Ollama model (`llama3.2`, ~2 GB) into a Docker volume — that takes a few minutes and needs a few GB of RAM. Requests may return _"model still starting"_ until the pull finishes; after that it's cached. Subsequent `docker compose up` runs are instant.
 
@@ -87,12 +58,64 @@ docker run -p 3000:3000 -e LLM_PROVIDER=mock game-config-validator
 
 ---
 
+## Architecture
+
+```
+GameConfigValidator/
+├── services/
+│   └── config-validator/                 # the NestJS app
+│       ├── src/
+│       │   ├── main.ts                   # bootstrap: Swagger, static UI, raw-body parser
+│       │   ├── app.module.ts
+│       │   ├── config/
+│       │   │   ├── configuration.ts      # env-derived config (providers, models)
+│       │   │   └── env.validation.ts     # fail-fast env validation
+│       │   ├── validation/
+│       │   │   ├── validation.controller.ts   # POST /validate · GET /providers
+│       │   │   ├── validation.service.ts       # JSON parse + schema + LLM orchestration
+│       │   │   ├── schema/                      # ajv schema + service
+│       │   │   └── dto/                         # Swagger DTOs
+│       │   └── llm/
+│       │       ├── llm.service.ts               # LangChain facade + provider catalog
+│       │       ├── model.factory.ts             # builds a ChatModel per provider
+│       │       ├── feedback.schema.ts           # Zod schema for structured output
+│       │       ├── prompt.ts                     # ChatPromptTemplate + JSON fallback parse
+│       │       ├── llm.types.ts
+│       │       └── providers/mock.provider.ts   # deterministic offline provider
+│       ├── public/                       # demo UI (no build step)
+│       │   ├── index.html                # view (structure)
+│       │   ├── styles.css
+│       │   └── js/                        # api · view · editor · highlighter · controller · app
+│       └── test/e2e/                     # Playwright API + UI tests
+├── Dockerfile                            # multi-stage, Node 20 (keyless)
+├── docker-compose.yml                    # config-validator + Ollama (local LLM)
+└── package.json                          # npm workspace root
+```
+
+**Request flow:** `POST /validate` → the body is parsed (tolerant of trailing commas) → **ajv** validates the schema → if valid, the config goes to the selected **LangChain** provider for structured feedback → a combined `{ schema_validation, llm_feedback, provider, model }` response is returned. If the schema is invalid, the LLM call is skipped (analysing a malformed config is meaningless) and `llm_feedback` is `null`.
+
+---
+
 ## Building the image
 
-The image is **keyless** — no secret is baked in (providers are configured at runtime). `docker compose up` builds it locally alongside the Ollama sibling, so there's nothing to publish. To build a standalone image directly:
+The image is **keyless** — no secret is baked in (providers are configured at runtime).
+
+**For normal use, prefer `docker compose up`** (see [Quick start](#quick-start)). It builds this image **and** starts the Ollama sibling with the right env and networking, so the service works end-to-end — that's what "just runs." (Add `--build` only to rebuild after code changes.)
+
+`docker build` only produces the image; it does **not** start anything or launch Ollama:
 
 ```bash
 docker build -t game-config-validator .
+```
+
+A container from that image runs on its own, but with no Ollama reachable it needs a cloud key (or a reachable `OLLAMA_BASE_URL`) to do LLM analysis:
+
+```bash
+# offline smoke test (schema validation + deterministic mock feedback)
+docker run -p 3000:3000 -e LLM_PROVIDER=mock game-config-validator
+
+# or point it at a cloud provider with your own key
+docker run -p 3000:3000 -e LLM_PROVIDER=gemini -e GEMINI_API_KEY=your-key game-config-validator
 ```
 
 > **Secret posture.** Nothing sensitive is in the repo or the image. Each user supplies their **own** cloud key at runtime (via `.env` / shell), or uses the keyless Ollama default. Passing a key as a runtime env var is the 12-factor standard; it isn't cryptographic protection (env is readable via `docker inspect`), but combined with "never in git, never in the image" it's the honest, professional baseline. For central rotation/audit, the drop-in upgrade is a secret manager (e.g. Google Secret Manager) fetched at boot.
