@@ -2,6 +2,8 @@ export interface AppConfig {
   port: number;
   llm: {
     provider: string;
+    /** Hard cap per LLM request (ms); bounds hung providers. */
+    timeoutMs: number;
     gemini: { apiKey: string; model: string };
     openai: { apiKey: string; model: string };
     ollama: { baseUrl: string; model: string };
@@ -14,6 +16,8 @@ export default (): AppConfig => ({
     // Default to the local, keyless Ollama provider so the service runs with
     // zero secrets. Cloud providers activate only when their key is set.
     provider: process.env.LLM_PROVIDER ?? 'ollama',
+    // Generous enough for a first-run local Ollama inference, but bounded.
+    timeoutMs: parseInt(process.env.LLM_TIMEOUT_MS ?? '60000', 10),
     gemini: {
       apiKey: process.env.GEMINI_API_KEY ?? '',
       model: process.env.GEMINI_MODEL ?? 'gemini-3.1-flash-lite',

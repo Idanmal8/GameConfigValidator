@@ -15,10 +15,13 @@ export interface BuiltModel {
   model: AnyChatModel;
   provider: string;
   modelName: string;
+  /** Per-request timeout (ms); the service also enforces it via AbortSignal. */
+  timeoutMs: number;
 }
 
 const TEMPERATURE = 0.4;
 const MAX_RETRIES = 2; // LangChain retries transient 429/5xx (e.g. Gemini overload)
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 /**
  * Builds a LangChain chat model for the requested provider. This is the single
@@ -29,6 +32,8 @@ export class ModelFactory {
   constructor(private readonly config: ConfigService) {}
 
   create(provider: string, model?: string): BuiltModel {
+    const timeoutMs =
+      this.config.get<number>('llm.timeoutMs') ?? DEFAULT_TIMEOUT_MS;
     let raw: unknown;
     let modelName: string;
 
@@ -52,6 +57,7 @@ export class ModelFactory {
           model: modelName,
           temperature: TEMPERATURE,
           maxRetries: MAX_RETRIES,
+          timeout: timeoutMs,
         });
         break;
       }
@@ -73,7 +79,7 @@ export class ModelFactory {
         );
     }
 
-    return { provider, modelName, model: raw as AnyChatModel };
+    return { provider, modelName, model: raw as AnyChatModel, timeoutMs };
   }
 
   private requireKey(path: string, provider: string, env: string): string {
