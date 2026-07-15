@@ -3,9 +3,11 @@
 A NestJS microservice that validates **game level configurations** in two layers:
 
 1. **Schema validation** with [ajv](https://ajv.js.org/) (JSON Schema) — structural correctness.
-2. **LLM game-design analysis** (Google Gemini) — logical/balancing risks that a schema can't catch, e.g. _"reward too high for an easy level"_ or _"time limit too short."_
+2. **LLM game-design analysis** — logical/balancing risks a schema can't catch, e.g. _"reward too high for an easy level"_ or _"time limit too short."_
 
 It returns a single structured JSON response combining both.
+
+> **This branch (`improvment/LangChain`)** reimplements the LLM layer on **[LangChain](https://js.langchain.com/)** with **multiple selectable providers** — **Ollama** (local, no key, the default), **Google Gemini**, and **OpenAI** — plus a deterministic `mock`. Feedback is produced via LangChain **structured output** (Zod-validated). No API keys are baked into anything: the local Ollama default means `docker compose up` works with **zero secrets**, and cloud providers activate only when you supply your own key.
 
 The repo is laid out as a **monorepo** (`services/*`) so it reads as one service in a larger platform — adding a sibling service later needs no restructuring.
 
@@ -42,13 +44,15 @@ GameConfigValidator/
 │       │   │   ├── schema/                      # ajv schema + service
 │       │   │   └── dto/                         # Swagger DTOs
 │       │   └── llm/
-│       │       ├── llm.service.ts               # provider-agnostic facade
-│       │       ├── providers/                   # gemini + mock
-│       │       └── prompt.ts                    # system prompt + JSON parsing
+│       │       ├── llm.service.ts               # LangChain facade (structured output)
+│       │       ├── model.factory.ts             # builds a ChatModel per provider
+│       │       ├── feedback.schema.ts           # Zod schema for structured output
+│       │       ├── providers/mock.provider.ts   # deterministic offline provider
+│       │       └── prompt.ts                     # system prompt + JSON fallback parse
 │       ├── public/index.html        # minimal demo UI
 │       └── test/e2e/                # Playwright API + UI tests
-├── Dockerfile                       # multi-stage, Node 20
-├── docker-compose.yml
+├── Dockerfile                       # multi-stage, Node 20 (keyless)
+├── docker-compose.yml               # config-validator + Ollama (local LLM)
 └── package.json                     # npm workspace root
 ```
 
@@ -56,89 +60,76 @@ GameConfigValidator/
 
 ---
 
-## Quick start — Docker (zero config)
+## Quick start — Docker (zero config, zero keys)
 
-**If you just want to use the service, you don't need an API key, Node.js, or any configuration.** The Gemini key is already baked into the image published to GitHub Container Registry (GHCR). Because the image is private (it contains the key), authenticate once, then run:
+**No API key, no `.env`, no Node.js needed.** From the repo directory:
 
 ```bash
-# 1. one-time login on this machine (any GitHub token with read:packages scope)
-echo "$GITHUB_TOKEN" | docker login ghcr.io -u <your-github-username> --password-stdin
-
-# 2. from the repo directory, pull + run
 docker compose up
 ```
 
-That's it — open <http://localhost:3000>. The UI, Swagger (`/api`), and `POST /validate` work immediately; `docker compose up` **pulls** the pre-built image (it never builds from your clone), so the key stays server-side and out of your hands.
+This starts two services: a local **Ollama** container (the keyless default LLM) and the validator. Then open <http://localhost:3000> — the UI, Swagger (`/api`), and `POST /validate` all work.
 
-No repo checkout? A single `docker run` works too:
+> **First run** pulls the Ollama model (`llama3.2`, ~2 GB) into a Docker volume — that takes a few minutes and needs a few GB of RAM. Requests may return _"model still starting"_ until the pull finishes; after that it's cached. Subsequent `docker compose up` runs are instant.
+
+Want a real cloud model instead of local? Provide **your own** key (nothing is shipped) and select the provider:
 
 ```bash
-docker run -p 3000:3000 ghcr.io/idanmal8/game-config-validator:latest
+GEMINI_API_KEY=your-key docker compose up      # enables the gemini provider
+# then: POST /validate?provider=gemini
 ```
 
-> **Requirements to run:** just Docker + a one-time `docker login ghcr.io`. No Node.js, no key, no `.env`.
-
-Run fully offline (no LLM calls) for a quick smoke test with the deterministic mock provider:
+No LLM at all (instant, deterministic) for a smoke test:
 
 ```bash
-docker run -p 3000:3000 -e LLM_PROVIDER=mock ghcr.io/idanmal8/game-config-validator:latest
+docker run -p 3000:3000 -e LLM_PROVIDER=mock game-config-validator
 ```
 
 ---
 
 ## Building & publishing the image
 
-*(For the maintainer only — end users never do this.)*
-
-Publishing is automated by the **[`Publish image to GHCR`](.github/workflows/publish.yml)** GitHub Actions workflow. It builds the image with the key baked in and pushes it to `ghcr.io/idanmal8/game-config-validator`.
-
-**One-time setup:**
-
-1. Add the key as a repo secret: **Settings → Secrets and variables → Actions → New repository secret**, name `GEMINI_API_KEY`, value = your Google AI Studio key. GitHub masks it in all logs.
-2. (Optional) Override the baked model via the `GEMINI_MODEL` build-arg in the workflow.
-
-**Publishing:** the workflow runs automatically on every push to `main` that touches the service/Dockerfile, or on demand via **Actions → Publish image to GHCR → Run workflow**. It authenticates to GHCR with the built-in `GITHUB_TOKEN` (no PAT needed for pushing from CI).
-
-Prefer to publish by hand instead? The equivalent local commands:
+The image is **keyless** — no secret is baked in (providers are configured at runtime). Publishing to GHCR is automated by the **[`Publish image to GHCR`](.github/workflows/publish.yml)** workflow (multi-arch amd64 + arm64), so teammates can `docker pull` a ready image; the Ollama sibling still supplies the keyless local model.
 
 ```bash
-export GEMINI_API_KEY=your-google-ai-studio-key
-docker build --build-arg GEMINI_API_KEY="$GEMINI_API_KEY" -t ghcr.io/idanmal8/game-config-validator:latest .
+# manual equivalent
+docker build -t ghcr.io/idanmal8/game-config-validator:latest .
 docker push ghcr.io/idanmal8/game-config-validator:latest
 ```
 
-> **⚠️ Security policy.** Because the key is embedded in the image, it is recoverable from the image layers (`docker inspect`). **Keep this package private in GHCR — never make it public.** The repo itself contains no secret: only `.env.example` (a placeholder) is committed, and `.env` files are gitignored.
->
-> If keeping the key out of the image ever becomes a requirement, the drop-in upgrade is **Google Secret Manager** (store the key once, fetch it at boot via GCP credentials, commit only the non-secret resource name). The provider abstraction makes this an additive change with no consumer-facing difference.
+> **Secret posture.** Nothing sensitive is in the repo or the image. Each user supplies their **own** cloud key at runtime (via `.env` / shell), or uses the keyless Ollama default. Passing a key as a runtime env var is the 12-factor standard; it isn't cryptographic protection (env is readable via `docker inspect`), but combined with "never in git, never in the image" it's the honest, professional baseline. For central rotation/audit, the drop-in upgrade is a secret manager (e.g. Google Secret Manager) fetched at boot.
 
 ---
 
 ## Local development
 
-*(Only for working on the code — running the published image needs none of this.)*
+*(Only for working on the code.)*
 
 ```bash
 npm install
 
-# developers use their own key for live Gemini calls…
-cp .env.example services/config-validator/.env   # then set GEMINI_API_KEY
-# …or skip the key entirely and develop against the offline mock:
-#   set LLM_PROVIDER=mock in that .env
+cp .env.example services/config-validator/.env
+#  default LLM_PROVIDER=ollama needs a local Ollama running (`ollama serve`)
+#  or set LLM_PROVIDER=mock to develop with zero dependencies,
+#  or fill GEMINI_API_KEY / OPENAI_API_KEY to use a cloud provider
 
 npm run start:dev   # http://localhost:3000  (UI: /, Swagger: /api)
 ```
 
-Configuration is via environment variables (loaded from `services/config-validator/.env` in dev):
+Configuration is via environment variables (loaded from `services/config-validator/.env` in dev). Keys are **optional** — a provider activates only when its key is present; selecting an unconfigured provider returns a clear error.
 
-| Variable          | Default                                             | Description                                  |
-| ----------------- | --------------------------------------------------- | -------------------------------------------- |
-| `LLM_PROVIDER`    | `gemini`                                             | `gemini` or `mock` (offline, deterministic)  |
-| `GEMINI_API_KEY`  | —                                                   | Required when `LLM_PROVIDER=gemini`          |
-| `GEMINI_MODEL`    | `gemini-3.1-flash-lite`                             | Default model                                |
-| `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta`  | API base URL                                 |
-| `PORT`            | `3000`                                              | HTTP port                                    |
+| Variable          | Default                    | Description                                             |
+| ----------------- | -------------------------- | ------------------------------------------------------- |
+| `LLM_PROVIDER`    | `ollama`                   | Default provider: `ollama` / `gemini` / `openai` / `mock` |
+| `OLLAMA_BASE_URL` | `http://localhost:11434`   | Ollama endpoint (local, no key)                         |
+| `OLLAMA_MODEL`    | `llama3.2`                 | Default Ollama model                                    |
+| `GEMINI_API_KEY`  | —                          | Enables the `gemini` provider                           |
+| `GEMINI_MODEL`    | `gemini-3.1-flash-lite`    | Default Gemini model                                    |
+| `OPENAI_API_KEY`  | —                          | Enables the `openai` provider                           |
+| `OPENAI_MODEL`    | `gpt-4o-mini`              | Default OpenAI model                                    |
+| `PORT`            | `3000`                     | HTTP port                                               |
 
-The app **fails fast at boot** if `LLM_PROVIDER=gemini` and no key is set, so misconfiguration surfaces immediately rather than on the first request. Requires **Node.js ≥ 20**.
+Requires **Node.js ≥ 20**.
 
 ---
 
@@ -275,17 +266,25 @@ Interactive API docs are generated at <http://localhost:3000/api>, with the requ
 
 ---
 
-## Model selection
+## Providers & model selection
 
-Override the model per request:
+Pick the provider and model per request with `?provider=` and `?model=` (both optional; defaults come from config). The UI has a dropdown grouped by provider, and the response echoes the `provider` + `model` that produced the feedback.
+
+| Provider | Key needed | Example models |
+| -------- | ---------- | -------------- |
+| `ollama` (default) | none (local) | `llama3.2`, `mistral` |
+| `gemini` | `GEMINI_API_KEY` | `gemini-3.1-flash-lite`, `gemini-3.5-flash` |
+| `openai` | `OPENAI_API_KEY` | `gpt-4o-mini`, `gpt-4o` |
+| `mock` | none | deterministic (tests/offline) |
 
 ```bash
-curl -s -X POST 'http://localhost:3000/validate?model=gemini-3.1-flash-lite' \
+# use OpenAI's gpt-4o-mini (requires OPENAI_API_KEY on the server)
+curl -s -X POST 'http://localhost:3000/validate?provider=openai&model=gpt-4o-mini' \
   -H 'Content-Type: application/json' \
   -d '{"level":8,"time_limit":25,"reward":1800,"difficulty":"medium"}' | jq
 ```
 
-Swapping in another backend (Ollama, Anthropic, …) is a one-file addition: implement the `LlmProvider` interface and register it in `llm.module.ts`.
+Built on **LangChain**: each provider is a `ChatModel` from the model factory, so adding another (Anthropic, Mistral, …) is a single `case` in `model.factory.ts`.
 
 ---
 
@@ -310,6 +309,7 @@ npm run test:e2e
 
 - **Why ajv?** The config is a portable contract (other tools/languages may author it), JSON Schema is the natural format for it, and ajv's `{ valid, errors }` output maps directly onto the response — no fighting Nest's throw-on-invalid pipe. For a schema that lived only inside this service, `zod` (with `zod-to-json-schema`) would be the more idiomatic TypeScript choice; ajv was chosen deliberately for the contract/portability angle.
 - **Reference ranges as guidance, not rules.** The balancing ranges live in the prompt as guidance so the LLM reasons about patterns rather than us hard-coding thresholds.
-- **Provider abstraction.** `LlmService` depends on an `LlmProvider` interface; the concrete provider is chosen at DI time from config, making new backends and per-request model selection trivial.
+- **LangChain provider layer.** `LlmService` builds a LangChain `ChatModel` via `model.factory.ts` (one `case` per provider) and asks for **structured output** (`withStructuredOutput` + a Zod schema), so `llm_feedback` is typed and schema-validated. A defensive text-parse fallback covers local models that don't support structured output, and the deterministic `mock` provider keeps tests/offline runs LLM-free.
+- **Keyless by default.** Ollama (local) is the default provider, so the stack runs with zero secrets; cloud providers activate only when their key is supplied at runtime. No key is committed or baked into the image.
 - **Defensive LLM parsing.** Model output is coerced into the response shape (extracts JSON from prose/code fences, clamps confidence to `[0,1]`) so a chatty model never breaks the contract.
 - **Forgiving JSON input, readable errors.** The body is read as raw text and parsed by the service (not Nest's throwing parser). Common hand-editing slips like a trailing comma left after deleting a field are tolerated (via `JSON5`) so the request reaches schema validation and returns a meaningful `"difficulty: is required"` — instead of a cryptic `Expected double-quoted property name at position 55`. Genuinely broken JSON returns a plain-language, line-located message with likely causes. The UI sends the raw text so a config author sees the same readable errors.

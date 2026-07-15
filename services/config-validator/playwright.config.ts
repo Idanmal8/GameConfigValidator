@@ -21,6 +21,10 @@ export default defineConfig({
     env: {
       LLM_PROVIDER: 'mock',
       PORT: '3100',
+      // Deterministic provider availability for the /providers test:
+      // gemini "enabled", openai "needs key". No test makes a real gemini call.
+      GEMINI_API_KEY: 'test-gemini-key',
+      OPENAI_API_KEY: '',
     },
   },
 });

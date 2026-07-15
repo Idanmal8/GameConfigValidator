@@ -48,8 +48,15 @@ export class ValidationResponseDto {
   llm_feedback!: LlmFeedbackDto | null;
 
   @ApiProperty({
-    example: 'gemini',
-    description: 'Which LLM provider produced the feedback.',
+    example: 'ollama',
+    description: 'Which LLM provider produced the feedback (ollama/gemini/openai/mock).',
   })
   provider!: string;
+
+  @ApiProperty({
+    example: 'llama3.2',
+    nullable: true,
+    description: 'Which model produced the feedback. Null when the LLM was skipped.',
+  })
+  model!: string | null;
 }

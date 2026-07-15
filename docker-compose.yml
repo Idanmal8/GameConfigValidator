@@ -1,18 +1,40 @@
 services:
-  config-validator:
-    # Pre-built image published to GHCR by the "Publish image to GHCR" workflow,
-    # with the Gemini key already baked in. `docker compose up` pulls and runs it
-    # — no build, no key, no .env needed on this machine.
-    #
-    # One-time on each machine (private image needs auth):
-    #   echo $GITHUB_TOKEN | docker login ghcr.io -u <your-github-username> --password-stdin
-    image: ghcr.io/idanmal8/game-config-validator:latest
-    pull_policy: always
+  # Local, keyless LLM. Pulls the default model on first start, then serves it.
+  ollama:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "ollama serve &
+       until ollama list >/dev/null 2>&1; do sleep 1; done;
+       ollama pull ${OLLAMA_MODEL:-llama3.2};
+       wait"
+    volumes:
+      - ollama:/root/.ollama
     ports:
-      - "3000:3000"
-    environment:
-      PORT: 3000
+      - "11434:11434"
     restart: unless-stopped
 
-# Future services in this platform drop in as sibling entries here,
-# e.g. another validator or a config-registry service.
+  config-validator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: game-config-validator
+    depends_on:
+      - ollama
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      # Optional cloud providers activate only if you pass a key (from your
+      # shell / .env). No key is ever baked into the image on this branch.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.1-flash-lite}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+volumes:
+  ollama:

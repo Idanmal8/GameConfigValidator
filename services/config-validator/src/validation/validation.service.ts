@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import JSON5 from 'json5';
 import { SchemaValidationService } from './schema/schema-validation.service';
 import { LlmService } from '../llm/llm.service';
+import { LlmAnalyzeOptions } from '../llm/llm.types';
 import { ValidationResponseDto } from './dto/validation-response.dto';
 
 @Injectable()
@@ -13,7 +14,7 @@ export class ValidationService {
 
   async validate(
     input: unknown,
-    model?: string,
+    options: LlmAnalyzeOptions = {},
   ): Promise<ValidationResponseDto> {
     const parsed = this.parseBody(input);
 
@@ -23,7 +24,8 @@ export class ValidationService {
       return {
         schema_validation: { valid: false, errors: [parsed.error] },
         llm_feedback: null,
-        provider: this.llm.providerName,
+        provider: options.provider ?? this.llm.defaultProvider,
+        model: null,
       };
     }
 
@@ -35,15 +37,17 @@ export class ValidationService {
       return {
         schema_validation,
         llm_feedback: null,
-        provider: this.llm.providerName,
+        provider: options.provider ?? this.llm.defaultProvider,
+        model: null,
       };
     }
 
-    const llm_feedback = await this.llm.analyze(parsed.value, { model });
+    const result = await this.llm.analyze(parsed.value, options);
     return {
       schema_validation,
-      llm_feedback,
-      provider: this.llm.providerName,
+      llm_feedback: result.feedback,
+      provider: result.provider,
+      model: result.model,
     };
   }
 

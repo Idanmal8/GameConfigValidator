@@ -17,6 +17,7 @@ test('valid easy/high-reward config returns schema + LLM feedback', async ({
   expect(Array.isArray(body.llm_feedback.suggested_actions)).toBeTruthy();
   expect(body.llm_feedback.confidence).toBeGreaterThan(0);
   expect(body.provider).toBe('mock');
+  expect(body.model).toBe('mock');
 });
 
 test('invalid config returns schema errors and null llm_feedback', async ({
@@ -49,6 +50,30 @@ test('trailing comma + missing field yields a readable "is required" error', asy
   expect(body.llm_feedback).toBeNull();
 });
 
+test('GET /providers reports live availability per provider', async ({
+  request,
+}) => {
+  const res = await request.get('/providers');
+  expect(res.ok()).toBeTruthy();
+
+  const body = await res.json();
+  expect(body.default).toBeTruthy();
+  const byName = Object.fromEntries(
+    body.providers.map((p: { name: string }) => [p.name, p]),
+  );
+
+  // keyless providers are always available
+  expect(byName.ollama.available).toBe(true);
+  expect(byName.ollama.requiresKey).toBe(false);
+  expect(byName.mock.available).toBe(true);
+
+  // cloud providers reflect whether a key is loaded (see playwright env)
+  expect(byName.gemini.requiresKey).toBe(true);
+  expect(byName.gemini.available).toBe(true); // GEMINI_API_KEY set
+  expect(byName.openai.available).toBe(false); // no OPENAI_API_KEY
+  expect(Array.isArray(byName.gemini.models)).toBe(true);
+});
+
 test('genuinely broken JSON returns a friendly, located message', async ({
   request,
 }) => {
@@ -64,11 +89,24 @@ test('genuinely broken JSON returns a friendly, located message', async ({
   expect(body.schema_validation.errors[0]).toMatch(/Common causes/i);
 });
 
-test('model override is accepted via query param', async ({ request }) => {
-  const res = await request.post('/validate?model=gemini-3.1-flash-lite', {
+test('provider + model query params are accepted', async ({ request }) => {
+  const res = await request.post('/validate?provider=mock&model=mock', {
     data: { level: 1, time_limit: 120, reward: 100, difficulty: 'easy' },
   });
   expect(res.ok()).toBeTruthy();
   const body = await res.json();
   expect(body.schema_validation.valid).toBe(true);
+  expect(body.provider).toBe('mock');
+});
+
+test('selecting a provider with no key configured returns a clear error', async ({
+  request,
+}) => {
+  // The e2e server runs with no OPENAI_API_KEY, so openai is unconfigured.
+  const res = await request.post('/validate?provider=openai', {
+    data: { level: 1, time_limit: 120, reward: 100, difficulty: 'easy' },
+  });
+  const body = await res.json();
+  // schema passes; the LLM step fails with a helpful 400-style message
+  expect(body.message ?? JSON.stringify(body)).toMatch(/OPENAI_API_KEY|not configured/i);
 });

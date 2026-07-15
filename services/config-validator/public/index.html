@@ -139,11 +139,9 @@
           </div>
           <div class="row">
             <div>
-              <label for="model">Model (optional override)</label>
+              <label for="model">Model (provider · model)</label>
               <select id="model">
-                <option value="">default (gemini-3.1-flash-lite)</option>
-                <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
-                <option value="gemini-3.5-flash">gemini-3.5-flash (smarter, may be busy)</option>
+                <option value="">server default</option>
               </select>
             </div>
             <button id="submit">Validate</button>
@@ -161,6 +159,41 @@
 
     <script>
       const $ = (id) => document.getElementById(id);
+
+      // Build the model dropdown from the server so labels reflect which
+      // providers actually have a key loaded (enabled vs needs key).
+      async function loadProviders() {
+        const sel = $('model');
+        let data;
+        try {
+          data = await (await fetch('/providers')).json();
+        } catch {
+          return; // leave the "server default" option only
+        }
+        sel.length = 1; // keep the first "server default" option
+        sel.options[0].textContent = 'server default (' + data.default + ')';
+        const nice = { ollama: 'Ollama', gemini: 'Google Gemini', openai: 'OpenAI', mock: 'Mock' };
+        for (const p of data.providers) {
+          const status = !p.requiresKey
+            ? (p.name === 'mock' ? 'offline' : 'local · no key')
+            : p.available
+            ? 'enabled ✓'
+            : 'needs key';
+          const og = document.createElement('optgroup');
+          og.label = (nice[p.name] || p.name) + ' — ' + status;
+          const blocked = p.requiresKey && !p.available;
+          og.disabled = blocked;
+          for (const m of p.models) {
+            const o = document.createElement('option');
+            o.value = p.name + '|' + m;
+            o.textContent = m;
+            o.disabled = blocked;
+            og.appendChild(o);
+          }
+          sel.appendChild(og);
+        }
+      }
+      loadProviders();
 
       document.querySelectorAll('.examples button').forEach((b) => {
         b.addEventListener('click', () => {
@@ -256,8 +289,13 @@
         btn.textContent = 'Validating…';
         out.innerHTML = '<span class="muted">Analyzing…</span>';
         try {
-          const model = $('model').value;
-          const url = '/validate' + (model ? '?model=' + encodeURIComponent(model) : '');
+          // Value is "provider|model"; empty means use the server default.
+          const [provider, model] = ($('model').value || '').split('|');
+          const params = new URLSearchParams();
+          if (provider) params.set('provider', provider);
+          if (model) params.set('model', model);
+          const qs = params.toString();
+          const url = '/validate' + (qs ? '?' + qs : '');
           // Send the text as-is; the server parses + validates so JSON syntax
           // errors come back as readable, field-level messages.
           const res = await fetch(url, {
@@ -298,7 +336,7 @@
         } else {
           html += '<p class="muted" style="margin-top:12px">LLM analysis skipped (fix schema errors first).</p>';
         }
-        html += '<p class="muted" style="margin-top:12px;font-size:12px">provider: ' + (data.provider || '—') + '</p>';
+        html += '<p class="muted" style="margin-top:12px;font-size:12px">provider: ' + (data.provider || '—') + (data.model ? ' · model: ' + data.model : '') + '</p>';
         out.innerHTML = html;
       }
     </script>

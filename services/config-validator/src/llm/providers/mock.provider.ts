@@ -1,17 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { LlmFeedback, LlmProvider } from '../llm.provider.interface';
+import { LlmFeedback } from '../llm.types';
 import { Difficulty } from '../../validation/schema/level-config.schema';
 
 /**
  * Deterministic, offline stand-in for a real LLM. Encodes a few of the same
  * heuristics the prompt describes so e2e tests and offline demos produce
- * meaningful, stable output without an API key or network.
+ * meaningful, stable output without an API key, a running Ollama, or network.
  */
 @Injectable()
-export class MockProvider implements LlmProvider {
-  readonly name = 'mock';
-
-  async analyze(config: unknown): Promise<LlmFeedback> {
+export class MockProvider {
+  analyze(config: unknown): LlmFeedback {
     const c = (config ?? {}) as Partial<{
       difficulty: Difficulty;
       reward: number;
