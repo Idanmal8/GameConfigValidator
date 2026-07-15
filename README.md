@@ -14,10 +14,9 @@ The repo is laid out as a **monorepo** (`services/*`) so it reads as one service
 ## Table of contents
 
 - [Architecture](#architecture)
-- [Requirements](#requirements)
-- [Install & run (local)](#install--run-local)
-- [Configure the LLM API key](#configure-the-llm-api-key)
-- [Run with Docker](#run-with-docker)
+- [Quick start — Docker (zero config)](#quick-start--docker-zero-config)
+- [Building & publishing the image](#building--publishing-the-image)
+- [Local development](#local-development)
 - [API](#api)
 - [Example requests & responses](#example-requests--responses)
 - [Web UI](#web-ui)
@@ -57,111 +56,92 @@ GameConfigValidator/
 
 ---
 
-## Requirements
+## Quick start — Docker (zero config)
 
-- **Node.js ≥ 20**
-- npm ≥ 9
-- (optional) Docker, for containerised runs
-- A **Google AI Studio API key** for the default Gemini provider (free tier) — or use the offline `mock` provider, which needs no key.
-
----
-
-## Install & run (local)
+**If you just want to use the service, you don't need an API key or any configuration.** The Gemini key is already **baked into the published image**, so you only pull and run:
 
 ```bash
-# from the repo root
-npm install
-
-# copy the env template and fill in your key
-cp .env.example services/config-validator/.env
-#   -> set GEMINI_API_KEY, or set LLM_PROVIDER=mock to run offline
-
-# start in watch mode
-npm run start:dev
+docker run -p 3000:3000 <your-private-registry>/game-config-validator:latest
 ```
 
-The service starts on **http://localhost:3000**:
+That's it — open <http://localhost:3000>. The UI, Swagger (`/api`), and `POST /validate` all work immediately; the key is inside the image.
 
-- UI: <http://localhost:3000/>
-- Swagger: <http://localhost:3000/api>
-- API: `POST http://localhost:3000/validate`
+Prefer compose? With the image published, a one-liner does it:
 
-> **No key handy?** Set `LLM_PROVIDER=mock` in the `.env` and everything works offline with deterministic, rule-based feedback (also what the e2e tests use).
+```bash
+docker compose up
+```
+
+> **Requirements to run:** just Docker. No Node.js, no key, no `.env`.
+
+Want to run fully offline (no LLM calls at all) for a quick smoke test? Use the deterministic mock provider:
+
+```bash
+docker run -p 3000:3000 -e LLM_PROVIDER=mock <your-private-registry>/game-config-validator:latest
+```
 
 ---
 
-## Configure the LLM API key
+## Building & publishing the image
 
-1. Create a key at **[Google AI Studio → API keys](https://aistudio.google.com/app/apikey)** (free tier).
-2. Put it in `services/config-validator/.env`:
+*(This section is for the maintainer who holds the key — end users never do this.)*
 
-```env
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=your-google-ai-studio-key-here
-GEMINI_MODEL=gemini-3.1-flash-lite
+The key is supplied **at build time** from the builder's shell / CI secret (a `--build-arg`). It is never read from the repo and never committed.
+
+```bash
+# 1. build with the key baked in (key comes from your shell/CI secret)
+export GEMINI_API_KEY=your-google-ai-studio-key
+docker build --build-arg GEMINI_API_KEY="$GEMINI_API_KEY" -t game-config-validator .
+#    optionally override the baked model:  --build-arg GEMINI_MODEL=gemini-3.5-flash
+
+# 2. push to a PRIVATE registry, so teammates can pull + run with zero config
+docker tag game-config-validator <your-private-registry>/game-config-validator:latest
+docker push <your-private-registry>/game-config-validator:latest
 ```
 
-Environment variables:
+**No private registry?** Share the built image as a file instead — same zero-config result:
+
+```bash
+# maintainer: export the image
+docker save game-config-validator | gzip > game-config-validator.tar.gz
+
+# teammate: load it, then run (no key, no config)
+docker load < game-config-validator.tar.gz
+docker run -p 3000:3000 game-config-validator
+```
+
+> **⚠️ Security policy.** Because the key is embedded in the image, it is recoverable from the image layers (`docker inspect`). **This image must live only in a private, access-controlled registry — never push it to a public one.** The repo itself contains no secret: only `.env.example` (a placeholder) is committed, and `.env` files are gitignored.
+>
+> If keeping the key out of the image ever becomes a requirement, the drop-in upgrade is **Google Secret Manager** (store the key once, fetch it at boot via GCP credentials, commit only the non-secret resource name). The provider abstraction makes this an additive change with no consumer-facing difference.
+
+---
+
+## Local development
+
+*(Only for working on the code — running the published image needs none of this.)*
+
+```bash
+npm install
+
+# developers use their own key for live Gemini calls…
+cp .env.example services/config-validator/.env   # then set GEMINI_API_KEY
+# …or skip the key entirely and develop against the offline mock:
+#   set LLM_PROVIDER=mock in that .env
+
+npm run start:dev   # http://localhost:3000  (UI: /, Swagger: /api)
+```
+
+Configuration is via environment variables (loaded from `services/config-validator/.env` in dev):
 
 | Variable          | Default                                             | Description                                  |
 | ----------------- | --------------------------------------------------- | -------------------------------------------- |
 | `LLM_PROVIDER`    | `gemini`                                             | `gemini` or `mock` (offline, deterministic)  |
 | `GEMINI_API_KEY`  | —                                                   | Required when `LLM_PROVIDER=gemini`          |
-| `GEMINI_MODEL`    | `gemini-3.1-flash-lite`                                  | Default model                                |
+| `GEMINI_MODEL`    | `gemini-3.1-flash-lite`                             | Default model                                |
 | `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta`  | API base URL                                 |
 | `PORT`            | `3000`                                              | HTTP port                                    |
 
-The app **fails fast at boot** if `LLM_PROVIDER=gemini` and no key is set, so misconfiguration surfaces immediately rather than on the first request.
-
----
-
-## Run with Docker
-
-This is an **internal tool**, so the Gemini key is **baked into the image at build time** and the image is shared via a **private** registry. Consumers then run it with **zero configuration** — no `.env` to hand off.
-
-The key is supplied at build time from the **builder's shell / CI secret** (a `--build-arg`). It is never read from the repo and never committed.
-
-### Build (the person/CI who holds the key)
-
-```bash
-# key comes from your shell/CI secret, not the repo
-export GEMINI_API_KEY=your-google-ai-studio-key
-
-docker build --build-arg GEMINI_API_KEY="$GEMINI_API_KEY" -t game-config-validator .
-# or, equivalently, via compose:
-GEMINI_API_KEY="$GEMINI_API_KEY" docker compose build
-```
-
-Optionally override the baked model: `--build-arg GEMINI_MODEL=gemini-3.5-flash`.
-
-### Distribute (private registry only)
-
-```bash
-docker tag game-config-validator <your-private-registry>/game-config-validator:latest
-docker push <your-private-registry>/game-config-validator:latest
-```
-
-### Run (any team member — no key needed)
-
-```bash
-docker run -p 3000:3000 game-config-validator          # local image
-# or after pulling from your registry:
-docker run -p 3000:3000 <your-private-registry>/game-config-validator:latest
-```
-
-The service is then on <http://localhost:3000>, ready to use — the key is already inside.
-
-Run offline (no key at all) with the mock provider:
-
-```bash
-docker run -p 3000:3000 -e LLM_PROVIDER=mock game-config-validator
-```
-
-> **⚠️ Security policy.** Because the key is embedded in the image, it is recoverable from the image layers (`docker inspect`). **This image must live only in a private, access-controlled registry — never push it to a public one.** The repo itself contains no secret: only `.env.example` (a placeholder) is committed, and `.env` files are gitignored. If you'd prefer the key *not* be in the image, see [Alternative: no secret in the image](#alternative-no-secret-in-the-image).
-
-### Alternative: no secret in the image
-
-If keeping the key out of the image becomes a requirement (e.g. before wider distribution), the drop-in upgrade is **Google Secret Manager**: store the key once, have the container fetch it at boot via GCP credentials, and commit only the non-secret secret *resource name*. The provider abstraction means this is an additive change — no consumer-facing differences.
+The app **fails fast at boot** if `LLM_PROVIDER=gemini` and no key is set, so misconfiguration surfaces immediately rather than on the first request. Requires **Node.js ≥ 20**.
 
 ---
 
