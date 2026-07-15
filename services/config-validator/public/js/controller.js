@@ -6,7 +6,7 @@ import {
   populateProviders,
   renderResult,
   renderMessage,
-  renderBusy,
+  startBusy,
 } from './view.js';
 
 export function initController() {
@@ -50,7 +50,7 @@ export function initController() {
     }
     submit.disabled = true;
     submit.textContent = 'Validating…';
-    renderBusy(result, 'Analyzing…');
+    const busy = startBusy(result);
     try {
       const [provider, model] = (modelSelect.value || '').split('|');
       const data = await validate(raw, { provider, model });
@@ -58,6 +58,7 @@ export function initController() {
     } catch (e) {
       renderMessage(result, 'bad', 'Request failed', (e && e.message) || 'Unknown error');
     } finally {
+      busy.stop();
       submit.disabled = false;
       submit.textContent = 'Validate';
     }

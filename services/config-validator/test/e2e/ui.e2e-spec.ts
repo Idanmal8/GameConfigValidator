@@ -22,6 +22,38 @@ test('UI surfaces schema errors for an invalid config', async ({ page }) => {
   await expect(result).toContainText('invalid', { timeout: 15_000 });
 });
 
+test('shows an animated loader while validating, then clears it', async ({
+  page,
+}) => {
+  await page.goto('/');
+  // Delay the /validate response so the loading state is observable.
+  await page.route('**/validate*', async (route) => {
+    await new Promise((r) => setTimeout(r, 1200));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schema_validation: { valid: true, errors: [] },
+        llm_feedback: {
+          analysis: 'looks fine',
+          suggested_actions: ['No action needed'],
+          confidence: 0.9,
+        },
+        provider: 'mock',
+        model: 'mock',
+      }),
+    });
+  });
+
+  await page.getByRole('button', { name: 'Validate' }).click();
+  // spinner + busy button appear while the request is in flight
+  await expect(page.locator('#result .spinner')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Validating…' })).toBeVisible();
+  // once resolved, the loader is gone and the result is shown
+  await expect(page.locator('#result')).toContainText('valid', { timeout: 10_000 });
+  await expect(page.locator('#result .spinner')).toHaveCount(0);
+});
+
 test('Tab inserts spaces instead of moving focus', async ({ page }) => {
   await page.goto('/');
   const ta = page.locator('#config');
