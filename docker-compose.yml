@@ -1,0 +1,23 @@
+services:
+  config-validator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # The key is baked at BUILD time from the builder's shell / CI secret.
+      # Build with the key set in your environment, e.g.:
+      #   GEMINI_API_KEY=your-key docker compose build
+      args:
+        GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+        GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.1-flash-lite}
+        LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+    image: game-config-validator
+    ports:
+      - "3000:3000"
+    # No runtime secrets here — the key lives in the (private) image.
+    # Override only non-secret runtime settings if needed:
+    environment:
+      PORT: 3000
+    restart: unless-stopped
+
+# Future services in this platform drop in as sibling entries here,
+# e.g. another validator or a config-registry service.

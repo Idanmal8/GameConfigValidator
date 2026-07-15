@@ -1,0 +1,20 @@
+{
+  "name": "game-config-validator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LLM-assisted validation platform for game feature configurations",
+  "workspaces": [
+    "services/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace services/config-validator",
+    "start": "npm run start --workspace services/config-validator",
+    "start:dev": "npm run start:dev --workspace services/config-validator",
+    "start:prod": "npm run start:prod --workspace services/config-validator",
+    "test": "npm run test --workspace services/config-validator",
+    "test:e2e": "npm run test:e2e --workspace services/config-validator"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
