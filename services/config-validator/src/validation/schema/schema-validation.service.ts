@@ -34,6 +34,7 @@ function formatError(err: ErrorObject): string {
   const params = err.params as {
     additionalProperty?: string;
     missingProperty?: string;
+    allowedValues?: unknown[];
   };
 
   if (err.keyword === 'required' && params.missingProperty) {
@@ -46,5 +47,12 @@ function formatError(err: ErrorObject): string {
   const field = err.instancePath
     ? err.instancePath.replace(/^\//, '')
     : '(root)';
+
+  // enum: name the allowed values so the author knows what to pick.
+  if (err.keyword === 'enum' && Array.isArray(params.allowedValues)) {
+    const allowed = params.allowedValues.map((v) => JSON.stringify(v)).join(', ');
+    return `${field}: must be one of ${allowed}`;
+  }
+
   return `${field}: ${err.message}`;
 }

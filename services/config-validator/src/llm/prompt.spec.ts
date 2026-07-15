@@ -1,4 +1,4 @@
-import { buildUserPrompt, parseFeedback } from './prompt';
+import { analysisPrompt, parseFeedback } from './prompt';
 
 describe('parseFeedback', () => {
   it('parses a clean JSON response', () => {
@@ -38,9 +38,17 @@ describe('parseFeedback', () => {
   });
 });
 
-describe('buildUserPrompt', () => {
-  it('embeds the config as pretty JSON', () => {
-    const prompt = buildUserPrompt({ level: 1 });
-    expect(prompt).toContain('"level": 1');
+describe('analysisPrompt', () => {
+  it('embeds the config into the human message and keeps the system prompt', async () => {
+    const messages = await analysisPrompt.formatMessages({
+      config: '{"level":1}',
+    });
+    const system = String(messages[0].content);
+    const human = String(messages[messages.length - 1].content);
+
+    expect(system).toMatch(/game-design balancing assistant/i);
+    // output-format instructions must NOT be in the shared prompt anymore
+    expect(system).not.toMatch(/JSON object/i);
+    expect(human).toContain('"level":1');
   });
 });

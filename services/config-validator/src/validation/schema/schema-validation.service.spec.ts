@@ -13,15 +13,19 @@ describe('SchemaValidationService', () => {
     expect(result).toEqual({ valid: true, errors: [] });
   });
 
-  it('rejects an unknown difficulty', () => {
+  it('rejects an unknown difficulty and names the allowed values', () => {
     const result = service.validateConfig({
       level: 1,
       time_limit: 30,
       reward: 100,
-      difficulty: 'impossible',
+      difficulty: 'eas', // typo
     });
     expect(result.valid).toBe(false);
-    expect(result.errors.join(' ')).toMatch(/difficulty/);
+    const msg = result.errors.join(' ');
+    expect(msg).toMatch(/difficulty: must be one of/);
+    expect(msg).toContain('"easy"');
+    expect(msg).toContain('"medium"');
+    expect(msg).toContain('"hard"');
   });
 
   it('rejects missing required fields', () => {

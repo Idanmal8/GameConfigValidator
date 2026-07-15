@@ -1,13 +1,14 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { HumanMessage } from '@langchain/core/messages';
 import { ModelFactory } from './model.factory';
 import { MockProvider } from './providers/mock.provider';
 import { feedbackSchema } from './feedback.schema';
 import {
-  SYSTEM_PROMPT,
-  buildUserPrompt,
+  JSON_FORMAT_INSTRUCTION,
+  analysisPrompt,
   coerceFeedback,
+  configVars,
   parseFeedback,
 } from './prompt';
 import { LlmAnalyzeOptions, LlmProviderName, LlmResult } from './llm.types';
@@ -83,17 +84,17 @@ export class LlmService {
     }
 
     const built = this.factory.create(provider, options.model);
-    const messages = [
-      new SystemMessage(SYSTEM_PROMPT),
-      new HumanMessage(buildUserPrompt(config)),
-    ];
+    const vars = configVars(config);
 
-    // Preferred path: LangChain structured output (typed + schema-validated).
+    // Preferred path: LangChain structured output (schema enforced by the
+    // provider), composed as prompt → model.
     try {
       const structured = built.model.withStructuredOutput(feedbackSchema, {
         name: 'level_config_feedback',
       });
-      const raw = (await structured.invoke(messages)) as Record<string, unknown>;
+      const raw = (await analysisPrompt
+        .pipe(structured)
+        .invoke(vars)) as Record<string, unknown>;
       return {
         feedback: coerceFeedback(raw),
         provider: provider as LlmProviderName,
@@ -101,14 +102,18 @@ export class LlmService {
       };
     } catch (structuredErr) {
       // Some local models don't support structured output — fall back to a
-      // plain call and defensively parse the JSON out of the text.
+      // plain call, ask for JSON explicitly, and defensively parse it.
       this.logger.warn(
         `Structured output failed for ${provider}/${built.modelName}; trying text parse. ${String(
           structuredErr,
         )}`,
       );
       try {
-        const res = await built.model.invoke(messages);
+        const messages = await analysisPrompt.formatMessages(vars);
+        const res = await built.model.invoke([
+          ...messages,
+          new HumanMessage(JSON_FORMAT_INSTRUCTION),
+        ]);
         const text =
           typeof res.content === 'string'
             ? res.content
