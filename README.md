@@ -51,6 +51,15 @@ docker run -p 3000:3000 -e LLM_PROVIDER=mock game-config-validator
 
 Want **Gemini** or **OpenAI** rather than the local model? You provide **your own** key (none is shipped in the repo or image). The key goes in a **`.env` file in the repo root — the same folder as `docker-compose.yml`** — which `docker compose` reads automatically.
 
+**Get a key & pick a model:**
+
+| Provider | Get an API key | Models (env var `*_MODEL`) |
+| --- | --- | --- |
+| **Gemini** | [aistudio.google.com/api-keys](https://aistudio.google.com/api-keys) | `gemini-3.1-flash-lite` (default, fast/cheap) · `gemini-3.5-flash` (smarter) |
+| **OpenAI** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | `gpt-4o-mini` (default, fast/cheap) · `gpt-4o` (smarter) |
+
+The `*_MODEL` variables are optional — each provider uses its default if you don't set one. You can also override the model per request (`?model=gpt-4o`) or from the UI dropdown.
+
 ```bash
 # 1. in the repo root (next to docker-compose.yml)
 cp .env.example .env
